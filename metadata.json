@@ -1,0 +1,6 @@
+{
+  "name": "بوابة الطلبات",
+  "description": "منصة وطنية ذكية لتقديم الطلبات ومراجعتها مدعومة بالذكاء الاصطناعي من جيميني لتصنيف وحل الاستفسارات تلقائياً للمواطنين ومسؤولي النظام",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
