@@ -29,13 +29,7 @@ class PortalViewModel(private val repository: PortalRepository) : ViewModel() {
             initialValue = Setting(
                 id = 1,
                 selectedTheme = "GOLD",
-                selectedFontColor = "GOLD",
-                shareLink = "https://ai.studio/build",
-                bannerImageUrl = "https://images.unsplash.com/photo-1542744173-8e7e53415bb0?q=80&w=600&auto=format&fit=crop",
-                showAssistant = true,
-                assistantIconType = "STAR",
-                assistantIconSize = 18,
-                assistantLabel = "المساعد"
+                selectedFontColor = "GOLD"
             )
         )
 
@@ -83,8 +77,29 @@ class PortalViewModel(private val repository: PortalRepository) : ViewModel() {
                 if (!dir.exists()) dir.mkdirs()
                 val file = File(dir, "smart_portal_settings_backup.txt")
                 val current = settingState.value
-                val data = "${current.selectedTheme};${current.selectedFontColor};${current.shareLink};${current.bannerImageUrl};${current.showAssistant};${current.assistantIconType};${current.assistantIconSize};${current.assistantLabel}"
-                file.writeText(data)
+                val lines = listOf(
+                    current.selectedTheme,
+                    current.selectedFontColor,
+                    current.shareLink,
+                    current.bannerImageUrl,
+                    current.showAssistant.toString(),
+                    current.assistantIconType,
+                    current.assistantIconSize.toString(),
+                    current.assistantLabel,
+                    current.appTypesList,
+                    current.nameFieldLabel,
+                    current.isNameFieldRequired.toString(),
+                    current.detailsFieldLabel,
+                    current.isDetailsFieldVisible.toString(),
+                    current.isDetailsFieldRequired.toString(),
+                    current.documentFieldLabel,
+                    current.isDocumentFieldVisible.toString(),
+                    current.isDocumentFieldRequired.toString(),
+                    current.idCardFieldLabel,
+                    current.isIdCardFieldVisible.toString(),
+                    current.isIdCardFieldRequired.toString()
+                )
+                file.writeText(lines.joinToString("\n"))
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -96,18 +111,31 @@ class PortalViewModel(private val repository: PortalRepository) : ViewModel() {
         return try {
             val file = File("/sdcard/Download/smart_portal_settings_backup.txt")
             if (file.exists()) {
-                val data = file.readText().split(";")
-                if (data.size >= 8) {
+                val lines = file.readLines()
+                if (lines.size >= 8) {
                     val restored = Setting(
                         id = 1,
-                        selectedTheme = data[0],
-                        selectedFontColor = data[1],
-                        shareLink = data[2],
-                        bannerImageUrl = data[3],
-                        showAssistant = data[4].toBoolean(),
-                        assistantIconType = data[5],
-                        assistantIconSize = data[6].toIntOrNull() ?: 18,
-                        assistantLabel = data[7]
+                        selectedTheme = lines.getOrElse(0) { "GOLD" },
+                        selectedFontColor = lines.getOrElse(1) { "GOLD" },
+                        shareLink = lines.getOrElse(2) { "https://ai.studio/build" },
+                        bannerImageUrl = lines.getOrElse(3) { "https://images.unsplash.com/photo-1542744173-8e7e53415bb0?q=80&w=600&auto=format&fit=crop" },
+                        showAssistant = lines.getOrElse(4) { "true" }.toBoolean(),
+                        assistantIconType = lines.getOrElse(5) { "STAR" },
+                        assistantIconSize = lines.getOrElse(6) { "18" }.toIntOrNull() ?: 18,
+                        assistantLabel = lines.getOrElse(7) { "المساعد" },
+                        
+                        appTypesList = lines.getOrElse(8) { "عام ومراجعة,طلب تصديق وثائق,استفسار طارئ,معاملة تجارية / شركات" },
+                        nameFieldLabel = lines.getOrElse(9) { "الاسم الكامل للمتقدم" },
+                        isNameFieldRequired = lines.getOrElse(10) { "true" }.toBoolean(),
+                        detailsFieldLabel = lines.getOrElse(11) { "تفاصيل الطلب والرسالة" },
+                        isDetailsFieldVisible = lines.getOrElse(12) { "true" }.toBoolean(),
+                        isDetailsFieldRequired = lines.getOrElse(13) { "true" }.toBoolean(),
+                        documentFieldLabel = lines.getOrElse(14) { "إرفاق صورة المستند أو الطلب" },
+                        isDocumentFieldVisible = lines.getOrElse(15) { "true" }.toBoolean(),
+                        isDocumentFieldRequired = lines.getOrElse(16) { "false" }.toBoolean(),
+                        idCardFieldLabel = lines.getOrElse(17) { "صورة لبطاقة الهوية الشخصية" },
+                        isIdCardFieldVisible = lines.getOrElse(18) { "true" }.toBoolean(),
+                        isIdCardFieldRequired = lines.getOrElse(19) { "false" }.toBoolean()
                     )
                     viewModelScope.launch {
                         repository.updateFullSetting(restored)
@@ -129,24 +157,44 @@ class PortalViewModel(private val repository: PortalRepository) : ViewModel() {
         appType: String,
         message: String,
         imageUri: Uri?,
+        idCardUri: Uri?,
         onSuccess: () -> Unit,
         onError: (String) -> Unit
     ) {
         viewModelScope.launch {
-            if (fullName.trim().isEmpty()) {
-                onError("الرجاء إدخال الاسم بالكامل")
+            val currentSettings = settingState.value
+            
+            if (currentSettings.isNameFieldRequired && fullName.trim().isEmpty()) {
+                onError("الرجاء إدخال: ${currentSettings.nameFieldLabel}")
                 return@launch
             }
-            if (message.trim().isEmpty()) {
-                onError("الرجاء كتابة تفاصيل الطلب")
+            if (currentSettings.isDetailsFieldVisible && currentSettings.isDetailsFieldRequired && message.trim().isEmpty()) {
+                onError("الرجاء إدخال: ${currentSettings.detailsFieldLabel}")
+                return@launch
+            }
+            if (currentSettings.isDocumentFieldVisible && currentSettings.isDocumentFieldRequired && imageUri == null) {
+                onError("الرجاء إدخال المرفق: ${currentSettings.documentFieldLabel}")
+                return@launch
+            }
+            if (currentSettings.isIdCardFieldVisible && currentSettings.isIdCardFieldRequired && idCardUri == null) {
+                onError("الرجاء إدخال المرفق: ${currentSettings.idCardFieldLabel}")
                 return@launch
             }
 
             var localImagePath: String? = null
-            if (imageUri != null) {
+            if (imageUri != null && currentSettings.isDocumentFieldVisible) {
                 localImagePath = copyUriToInternalStorage(context, imageUri)
                 if (localImagePath == null) {
-                    onError("حدث خطأ أثناء مزامنة وحفظ الصورة المرفقة")
+                    onError("حدث خطأ أثناء مزامنة وحفظ ${currentSettings.documentFieldLabel}")
+                    return@launch
+                }
+            }
+
+            var localIdCardPath: String? = null
+            if (idCardUri != null && currentSettings.isIdCardFieldVisible) {
+                localIdCardPath = copyUriToInternalStorage(context, idCardUri)
+                if (localIdCardPath == null) {
+                    onError("حدث خطأ أثناء مزامنة وحفظ ${currentSettings.idCardFieldLabel}")
                     return@launch
                 }
             }
@@ -156,7 +204,8 @@ class PortalViewModel(private val repository: PortalRepository) : ViewModel() {
                 applicationType = appType,
                 message = message,
                 status = "PENDING",
-                imagePath = localImagePath
+                imagePath = localImagePath,
+                idCardImagePath = localIdCardPath
             )
 
             try {

@@ -10,7 +10,8 @@ data class Applicant(
     val applicationType: String,
     val message: String,
     val status: String, // "PENDING", "ACCEPTED", "REJECTED"
-    val imagePath: String?, // Saved local cache file path
+    val imagePath: String?, // Saved local cache file path for documents
+    val idCardImagePath: String?, // Saved local cache file path for ID card
     val timestamp: Long = System.currentTimeMillis()
 )
 
@@ -22,9 +23,23 @@ data class Setting(
     val shareLink: String = "https://ai.studio/build",
     val bannerImageUrl: String = "https://images.unsplash.com/photo-1542744173-8e7e53415bb0?q=80&w=600&auto=format&fit=crop",
     val showAssistant: Boolean = true,
-    val assistantIconType: String = "STAR", // "STAR", "LIGHTBULB", "INFO", "CHAT"
+    val assistantIconType: String = "STAR", // "STAR", "NOTIFICATIONS", "INFO", "FACE"
     val assistantIconSize: Int = 18,
-    val assistantLabel: String = "المساعد"
+    val assistantLabel: String = "المساعد",
+    
+    // Dynamic Form Customizations
+    val appTypesList: String = "عام ومراجعة,طلب تصديق وثائق,استفسار طارئ,معاملة تجارية / شركات",
+    val nameFieldLabel: String = "الاسم الكامل للمتقدم",
+    val isNameFieldRequired: Boolean = true,
+    val detailsFieldLabel: String = "تفاصيل الطلب والرسالة",
+    val isDetailsFieldVisible: Boolean = true,
+    val isDetailsFieldRequired: Boolean = true,
+    val documentFieldLabel: String = "إرفاق صورة المستند أو الطلب",
+    val isDocumentFieldVisible: Boolean = true,
+    val isDocumentFieldRequired: Boolean = false,
+    val idCardFieldLabel: String = "صورة لبطاقة الهوية الشخصية",
+    val isIdCardFieldVisible: Boolean = true,
+    val isIdCardFieldRequired: Boolean = false
 )
 
 @Dao
@@ -53,7 +68,7 @@ interface PortalDao {
     suspend fun saveSetting(setting: Setting)
 }
 
-@Database(entities = [Applicant::class, Setting::class], version = 2, exportSchema = false)
+@Database(entities = [Applicant::class, Setting::class], version = 3, exportSchema = false)
 abstract class PortalDatabase : RoomDatabase() {
     abstract fun portalDao(): PortalDao
 }

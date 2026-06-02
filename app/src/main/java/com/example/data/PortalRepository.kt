@@ -26,13 +26,7 @@ class PortalRepository(private val portalDao: PortalDao) {
             val defaultSetting = Setting(
                 id = 1,
                 selectedTheme = "GOLD",
-                selectedFontColor = "GOLD",
-                shareLink = "https://ai.studio/build",
-                bannerImageUrl = "https://images.unsplash.com/photo-1542744173-8e7e53415bb0?q=80&w=600&auto=format&fit=crop",
-                showAssistant = true,
-                assistantIconType = "STAR",
-                assistantIconSize = 18,
-                assistantLabel = "المساعد"
+                selectedFontColor = "GOLD"
             )
             portalDao.saveSetting(defaultSetting)
             return defaultSetting

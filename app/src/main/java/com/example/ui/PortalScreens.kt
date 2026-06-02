@@ -299,21 +299,42 @@ fun ApplyScreen(
     onSuccessSubmit: () -> Unit
 ) {
     val context = LocalContext.current
+    val settingsState by viewModel.settingState.collectAsState()
+    
+    val appTypes = remember(settingsState.appTypesList) {
+        settingsState.appTypesList.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+    }
+    
     var fullName by remember { mutableStateOf("") }
-    var selectedAppType by remember { mutableStateOf("عام ومراجعة") }
+    var selectedAppType by remember { mutableStateOf("") }
+    
+    LaunchedEffect(appTypes) {
+        if (selectedAppType.isEmpty() || !appTypes.contains(selectedAppType)) {
+            selectedAppType = appTypes.firstOrNull() ?: ""
+        }
+    }
+    
     var messageDetail by remember { mutableStateOf("") }
     var imageUri by remember { mutableStateOf<Uri?>(null) }
+    var idCardUri by remember { mutableStateOf<Uri?>(null) }
     var isSubmitting by remember { mutableStateOf(false) }
 
-    // List of application types
-    val appTypes = listOf("عام ومراجعة", "طلب تصديق وثائق", "استفسار طارئ", "معاملة تجارية / شركات")
-
-    // Image Picker Launcher
+    // First Image Pick (Documents/Application)
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
         onResult = { uri ->
             if (uri != null) {
                 imageUri = uri
+            }
+        }
+    )
+
+    // Second Image Pick (Personal ID Card Image - Optional by default)
+    val idCardPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+        onResult = { uri ->
+            if (uri != null) {
+                idCardUri = uri
             }
         }
     )
@@ -348,7 +369,7 @@ fun ApplyScreen(
             // Name Field (Highlighting typed characters with dynamic chosen font color + bold)
             item {
                 Text(
-                    text = "الاسم الكامل للمتقدم",
+                    text = settingsState.nameFieldLabel + if (settingsState.isNameFieldRequired) " *" else "",
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     color = fontColor,
@@ -379,147 +400,230 @@ fun ApplyScreen(
             }
 
             // App Type Option Chips
-            item {
-                Text(
-                    text = "نوع الطلب / المعاملة",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = fontColor,
-                    modifier = Modifier.padding(bottom = 6.dp)
-                )
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    appTypes.forEach { type ->
-                        val isSelected = selectedAppType == type
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
-                            ),
-                            shape = RoundedCornerShape(20.dp),
-                            modifier = Modifier
-                                .padding(horizontal = 4.dp, vertical = 2.dp)
-                                .clickable { selectedAppType = type }
-                        ) {
-                            Text(
-                                text = type,
-                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else fontColor,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-                            )
+            if (appTypes.isNotEmpty()) {
+                item {
+                    Text(
+                        text = "نوع الطلب / المعاملة",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = fontColor,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        appTypes.forEach { type ->
+                            val isSelected = selectedAppType == type
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
+                                ),
+                                shape = RoundedCornerShape(20.dp),
+                                modifier = Modifier
+                                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                                    .clickable { selectedAppType = type }
+                            ) {
+                                Text(
+                                    text = type,
+                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary else fontColor,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                                )
+                            }
                         }
                     }
                 }
             }
 
             // Message / Detail text area (High contrast)
-            item {
-                Text(
-                    text = "تفاصيل الطلب والرسالة",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = fontColor,
-                    modifier = Modifier.padding(bottom = 6.dp)
-                )
-                OutlinedTextField(
-                    value = messageDetail,
-                    onValueChange = { messageDetail = it },
-                    placeholder = { Text("اكتب تفاصيل معاملتك وشرح مبسط هنا لحاجة تقديمها للادمن", color = fontColor.copy(alpha = 0.5f)) },
-                    minLines = 4,
-                    maxLines = 6,
-                    textStyle = TextStyle(
-                        color = Color.White,
+            if (settingsState.isDetailsFieldVisible) {
+                item {
+                    Text(
+                        text = settingsState.detailsFieldLabel + if (settingsState.isDetailsFieldRequired) " *" else "",
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                        textAlign = TextAlign.Right
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-                        cursorColor = Color.White
-                    ),
-                    shape = RoundedCornerShape(10.dp)
-                )
+                        color = fontColor,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+                    OutlinedTextField(
+                        value = messageDetail,
+                        onValueChange = { messageDetail = it },
+                        placeholder = { Text("اكتب تفاصيل معاملتك وشرح مبسط هنا لحاجة تقديمها للادمن", color = fontColor.copy(alpha = 0.5f)) },
+                        minLines = 4,
+                        maxLines = 6,
+                        textStyle = TextStyle(
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            textAlign = TextAlign.Right
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                            cursorColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+                }
             }
 
-            // Upload Image / Pick Attachment Row
-            item {
-                Text(
-                    text = "إرفاق صورة المستند أو البطاقة",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = fontColor,
-                    modifier = Modifier.padding(bottom = 6.dp)
-                )
-                
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (imageUri != null) {
-                        Box(
-                            modifier = Modifier
-                                .size(80.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
-                        ) {
-                            AsyncImage(
-                                model = imageUri,
-                                contentDescription = "المرفق المختار",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                            IconButton(
-                                onClick = { imageUri = null },
+            // First Image / Document Picker
+            if (settingsState.isDocumentFieldVisible) {
+                item {
+                    Text(
+                        text = settingsState.documentFieldLabel + if (settingsState.isDocumentFieldRequired) " *" else " (اختياري)",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = fontColor,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (imageUri != null) {
+                            Box(
                                 modifier = Modifier
-                                    .size(24.dp)
-                                    .align(Alignment.TopEnd)
-                                    .background(Color.Black.copy(alpha = 0.7f), CircleShape)
+                                    .size(80.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
+                            ) {
+                                AsyncImage(
+                                    model = imageUri,
+                                    contentDescription = "المرفق المختار",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                                IconButton(
+                                    onClick = { imageUri = null },
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .align(Alignment.TopEnd)
+                                        .background(Color.Black.copy(alpha = 0.7f), CircleShape)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "حذف المرفق",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                }
+                            }
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .size(80.dp)
+                                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
+                                    .border(1.dp, fontColor.copy(alpha = 0.3f), RoundedCornerShape(8.dp)),
+                                contentAlignment = Alignment.Center
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "حذف المرفق",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(12.dp)
+                                    imageVector = Icons.Default.Info,
+                                    contentDescription = "لا يوجد صورة",
+                                    tint = fontColor.copy(alpha = 0.4f)
                                 )
                             }
                         }
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .size(80.dp)
-                                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
-                                .border(1.dp, fontColor.copy(alpha = 0.3f), RoundedCornerShape(8.dp)),
-                            contentAlignment = Alignment.Center
+
+                        Button(
+                            onClick = {
+                                imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                            shape = RoundedCornerShape(8.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Info,
-                                contentDescription = "لا يوجد صورة",
-                                tint = fontColor.copy(alpha = 0.4f)
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("اختر صورة مرفق", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Icon(Icons.Default.Add, contentDescription = "معرض الصور", modifier = Modifier.size(18.dp))
+                            }
                         }
                     }
+                }
+            }
 
-                    Button(
-                        onClick = {
-                            imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
-                        shape = RoundedCornerShape(8.dp)
+            // Second Image / Personal ID Card Picker (Optional by default unless specified by admin)
+            if (settingsState.isIdCardFieldVisible) {
+                item {
+                    Text(
+                        text = settingsState.idCardFieldLabel + if (settingsState.isIdCardFieldRequired) " *" else " (اختياري)",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = fontColor,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("اختر صورة مرفق", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Icon(Icons.Default.Add, contentDescription = "معرض الصور", modifier = Modifier.size(18.dp))
+                        if (idCardUri != null) {
+                            Box(
+                                modifier = Modifier
+                                    .size(80.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
+                            ) {
+                                AsyncImage(
+                                    model = idCardUri,
+                                    contentDescription = "الهوية الشخصية",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                                IconButton(
+                                    onClick = { idCardUri = null },
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .align(Alignment.TopEnd)
+                                        .background(Color.Black.copy(alpha = 0.7f), CircleShape)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "حذف صورة الهوية",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                }
+                            }
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .size(80.dp)
+                                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
+                                    .border(1.dp, fontColor.copy(alpha = 0.3f), RoundedCornerShape(8.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AccountBox,
+                                    contentDescription = "لا يوجد صورة هوية",
+                                    tint = fontColor.copy(alpha = 0.4f)
+                                )
+                            }
+                        }
+
+                        Button(
+                            onClick = {
+                                idCardPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("اختر الهوية الشخصية", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Icon(Icons.Default.AccountBox, contentDescription = "معرض الهوية", modifier = Modifier.size(18.dp))
+                            }
                         }
                     }
                 }
@@ -537,12 +641,14 @@ fun ApplyScreen(
                             appType = selectedAppType,
                             message = messageDetail,
                             imageUri = imageUri,
+                            idCardUri = idCardUri,
                             onSuccess = {
                                 isSubmitting = false
                                 Toast.makeText(context, "تم تقديم المعاملة بنجاح!", Toast.LENGTH_LONG).show()
                                 fullName = ""
                                 messageDetail = ""
                                 imageUri = null
+                                idCardUri = null
                                 onSuccessSubmit()
                             },
                             onError = { error ->
@@ -764,6 +870,23 @@ fun AdminDashboardScreen(
             var assistantIconSizeVal by remember { mutableStateOf(settingsState.assistantIconSize) }
             var assistantIconTypeVal by remember { mutableStateOf(settingsState.assistantIconType) }
             var assistantLabelVal by remember { mutableStateOf(settingsState.assistantLabel) }
+
+            // Dynamic registration fields form editor state variables
+            var appTypesListVal by remember { mutableStateOf(settingsState.appTypesList) }
+            var nameFieldLabelVal by remember { mutableStateOf(settingsState.nameFieldLabel) }
+            var isNameFieldRequiredVal by remember { mutableStateOf(settingsState.isNameFieldRequired) }
+
+            var detailsFieldLabelVal by remember { mutableStateOf(settingsState.detailsFieldLabel) }
+            var isDetailsFieldVisibleVal by remember { mutableStateOf(settingsState.isDetailsFieldVisible) }
+            var isDetailsFieldRequiredVal by remember { mutableStateOf(settingsState.isDetailsFieldRequired) }
+
+            var documentFieldLabelVal by remember { mutableStateOf(settingsState.documentFieldLabel) }
+            var isDocumentFieldVisibleVal by remember { mutableStateOf(settingsState.isDocumentFieldVisible) }
+            var isDocumentFieldRequiredVal by remember { mutableStateOf(settingsState.isDocumentFieldRequired) }
+
+            var idCardFieldLabelVal by remember { mutableStateOf(settingsState.idCardFieldLabel) }
+            var isIdCardFieldVisibleVal by remember { mutableStateOf(settingsState.isIdCardFieldVisible) }
+            var isIdCardFieldRequiredVal by remember { mutableStateOf(settingsState.isIdCardFieldRequired) }
 
             AlertDialog(
                 onDismissRequest = { showThemeDialog = false },
@@ -1053,6 +1176,243 @@ fun AdminDashboardScreen(
 
                         HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = fontColor.copy(alpha = 0.2f))
 
+                        Text(
+                            text = "تعديل خانات وطلبات التسجيل:",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(bottom = 12.dp)
+                        )
+
+                        // 1. Applications/Type options comma separated
+                        Text(
+                            text = "خيارات أنواع الطلبات (مفصولة بفاصلة):",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = fontColor,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        )
+                        OutlinedTextField(
+                            value = appTypesListVal,
+                            onValueChange = { appTypesListVal = it },
+                            placeholder = { Text("مثال: نوع 1,نوع 2,نوع 3", color = fontColor.copy(alpha = 0.4f)) },
+                            singleLine = true,
+                            textStyle = TextStyle(color = Color.White, fontSize = 14.sp, textAlign = TextAlign.Right),
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = fontColor.copy(alpha = 0.4f),
+                                cursorColor = Color.White
+                            )
+                        )
+
+                        // 2. Full Name field label & config
+                        Text(
+                            text = "تسمية خانة [الاسم الكامل]:",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = fontColor,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        )
+                        OutlinedTextField(
+                            value = nameFieldLabelVal,
+                            onValueChange = { nameFieldLabelVal = it },
+                            singleLine = true,
+                            textStyle = TextStyle(color = Color.White, fontSize = 14.sp, textAlign = TextAlign.Right),
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = fontColor.copy(alpha = 0.4f),
+                                cursorColor = Color.White
+                            )
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Switch(
+                                checked = isNameFieldRequiredVal,
+                                onCheckedChange = { isNameFieldRequiredVal = it },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = MaterialTheme.colorScheme.primary,
+                                    checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                                )
+                            )
+                            Text("الاسم حقل إجباري", fontSize = 12.sp, color = fontColor)
+                        }
+
+                        // 3. Details field label & config
+                        Text(
+                            text = "تسمية خانة [تفاصيل الطلب]:",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = fontColor,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        )
+                        OutlinedTextField(
+                            value = detailsFieldLabelVal,
+                            onValueChange = { detailsFieldLabelVal = it },
+                            singleLine = true,
+                            textStyle = TextStyle(color = Color.White, fontSize = 14.sp, textAlign = TextAlign.Right),
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = fontColor.copy(alpha = 0.4f),
+                                cursorColor = Color.White
+                            )
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Switch(
+                                checked = isDetailsFieldVisibleVal,
+                                onCheckedChange = { isDetailsFieldVisibleVal = it },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = MaterialTheme.colorScheme.primary,
+                                    checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                                )
+                            )
+                            Text("إظهار حقل التفاصيل", fontSize = 12.sp, color = fontColor)
+                        }
+                        if (isDetailsFieldVisibleVal) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Switch(
+                                    checked = isDetailsFieldRequiredVal,
+                                    onCheckedChange = { isDetailsFieldRequiredVal = it },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = MaterialTheme.colorScheme.primary,
+                                        checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                                    )
+                                )
+                                Text("تفاصيل الطلب حقل إجباري", fontSize = 12.sp, color = fontColor)
+                            }
+                        }
+
+                        // 4. Document upload field & config
+                        Text(
+                            text = "تسمية خانة [صورة المرفق/المستند]:",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = fontColor,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        )
+                        OutlinedTextField(
+                            value = documentFieldLabelVal,
+                            onValueChange = { documentFieldLabelVal = it },
+                            singleLine = true,
+                            textStyle = TextStyle(color = Color.White, fontSize = 14.sp, textAlign = TextAlign.Right),
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = fontColor.copy(alpha = 0.4f),
+                                cursorColor = Color.White
+                            )
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Switch(
+                                checked = isDocumentFieldVisibleVal,
+                                onCheckedChange = { isDocumentFieldVisibleVal = it },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = MaterialTheme.colorScheme.primary,
+                                    checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                                )
+                            )
+                            Text("إظهار حقل صورة المرفق", fontSize = 12.sp, color = fontColor)
+                        }
+                        if (isDocumentFieldVisibleVal) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Switch(
+                                    checked = isDocumentFieldRequiredVal,
+                                    onCheckedChange = { isDocumentFieldRequiredVal = it },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = MaterialTheme.colorScheme.primary,
+                                        checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                                    )
+                                )
+                                Text("صورة المرفق حقل إجباري", fontSize = 12.sp, color = fontColor)
+                            }
+                        }
+
+                        // 5. ID card field label & config
+                        Text(
+                            text = "تسمية خانة [صورة بطاقة الهوية]:",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = fontColor,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        )
+                        OutlinedTextField(
+                            value = idCardFieldLabelVal,
+                            onValueChange = { idCardFieldLabelVal = it },
+                            singleLine = true,
+                            textStyle = TextStyle(color = Color.White, fontSize = 14.sp, textAlign = TextAlign.Right),
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = fontColor.copy(alpha = 0.4f),
+                                cursorColor = Color.White
+                            )
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Switch(
+                                checked = isIdCardFieldVisibleVal,
+                                onCheckedChange = { isIdCardFieldVisibleVal = it },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = MaterialTheme.colorScheme.primary,
+                                    checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                                )
+                            )
+                            Text("إظهار حقل الهوية الشخصية", fontSize = 12.sp, color = fontColor)
+                        }
+                        if (isIdCardFieldVisibleVal) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Switch(
+                                    checked = isIdCardFieldRequiredVal,
+                                    onCheckedChange = { isIdCardFieldRequiredVal = it },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = MaterialTheme.colorScheme.primary,
+                                        checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                                    )
+                                )
+                                Text("صورة الهوية حقل إجباري", fontSize = 12.sp, color = fontColor)
+                            }
+                        }
+
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = fontColor.copy(alpha = 0.2f))
+
                         // Cloud & Backup Restorer Actions Pane
                         Text(
                             text = "نظام الحماية من الحفظ المباشر (نسخة احتياطية):",
@@ -1093,7 +1453,19 @@ fun AdminDashboardScreen(
                                             showAssistant = isAssistantVisible,
                                             assistantIconSize = assistantIconSizeVal,
                                             assistantIconType = assistantIconTypeVal,
-                                            assistantLabel = assistantLabelVal
+                                            assistantLabel = assistantLabelVal,
+                                            appTypesList = appTypesListVal,
+                                            nameFieldLabel = nameFieldLabelVal,
+                                            isNameFieldRequired = isNameFieldRequiredVal,
+                                            detailsFieldLabel = detailsFieldLabelVal,
+                                            isDetailsFieldVisible = isDetailsFieldVisibleVal,
+                                            isDetailsFieldRequired = isDetailsFieldRequiredVal,
+                                            documentFieldLabel = documentFieldLabelVal,
+                                            isDocumentFieldVisible = isDocumentFieldVisibleVal,
+                                            isDocumentFieldRequired = isDocumentFieldRequiredVal,
+                                            idCardFieldLabel = idCardFieldLabelVal,
+                                            isIdCardFieldVisible = isIdCardFieldVisibleVal,
+                                            isIdCardFieldRequired = isIdCardFieldRequiredVal
                                         )
                                     )
                                     Toast.makeText(context, "تمت المزامنة السحابية وقفل النسخ الاحتياطي بنجاح!", Toast.LENGTH_LONG).show()
@@ -1117,7 +1489,19 @@ fun AdminDashboardScreen(
                                     showAssistant = isAssistantVisible,
                                     assistantIconSize = assistantIconSizeVal,
                                     assistantIconType = assistantIconTypeVal,
-                                    assistantLabel = assistantLabelVal
+                                    assistantLabel = assistantLabelVal,
+                                    appTypesList = appTypesListVal,
+                                    nameFieldLabel = nameFieldLabelVal,
+                                    isNameFieldRequired = isNameFieldRequiredVal,
+                                    detailsFieldLabel = detailsFieldLabelVal,
+                                    isDetailsFieldVisible = isDetailsFieldVisibleVal,
+                                    isDetailsFieldRequired = isDetailsFieldRequiredVal,
+                                    documentFieldLabel = documentFieldLabelVal,
+                                    isDocumentFieldVisible = isDocumentFieldVisibleVal,
+                                    isDocumentFieldRequired = isDocumentFieldRequiredVal,
+                                    idCardFieldLabel = idCardFieldLabelVal,
+                                    isIdCardFieldVisible = isIdCardFieldVisibleVal,
+                                    isIdCardFieldRequired = isIdCardFieldRequiredVal
                                 )
                             )
                             showThemeDialog = false
@@ -1220,6 +1604,13 @@ fun ApplicantItem(
                 Spacer(modifier = Modifier.height(10.dp))
                 val imageFile = File(path)
                 if (imageFile.exists()) {
+                    Text(
+                        text = "صورة المستند المرفق:",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = fontColor.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1230,6 +1621,34 @@ fun ApplicantItem(
                         AsyncImage(
                             model = imageFile,
                             contentDescription = "المرفق المرفوع من المتقدم",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+            }
+
+            applicant.idCardImagePath?.let { path ->
+                Spacer(modifier = Modifier.height(10.dp))
+                val imageFile = File(path)
+                if (imageFile.exists()) {
+                    Text(
+                        text = "صورة بطاقة الهوية الشخصية المرفقة (اختياري):",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = fontColor.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(160.dp)
+                            .clip(RoundedCornerShape(8.dp)),
+                        elevation = CardDefaults.cardElevation(2.dp)
+                    ) {
+                        AsyncImage(
+                            model = imageFile,
+                            contentDescription = "صورة الهوية الشخصية للمتقدم",
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()
                         )
