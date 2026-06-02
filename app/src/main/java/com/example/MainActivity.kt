@@ -10,6 +10,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
@@ -32,6 +35,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.room.Room
 import com.example.data.PortalDatabase
 import com.example.data.PortalRepository
+import com.example.data.Setting
 import com.example.ui.*
 import com.example.ui.theme.PortalTheme
 import com.example.ui.theme.getActiveFontColor
@@ -61,6 +65,11 @@ class MainActivity : ComponentActivity() {
             val portalViewModel: PortalViewModel = viewModel(factory = viewModelFactory)
             val settingsState by portalViewModel.settingState.collectAsState()
             
+            // Check and restore settings from public directory if data was wiped
+            LaunchedEffect(Unit) {
+                portalViewModel.checkAndRestoreFromBackup()
+            }
+
             val activeFontColor = getActiveFontColor(settingsState.selectedFontColor)
 
             PortalTheme(themeName = settingsState.selectedTheme) {
@@ -71,7 +80,8 @@ class MainActivity : ComponentActivity() {
                     bottomBar = {
                         CustomBottomNavigation(
                             navController = navController,
-                            fontColor = activeFontColor
+                            fontColor = activeFontColor,
+                            settingsState = settingsState
                         )
                     }
                 ) { innerPadding ->
@@ -84,6 +94,7 @@ class MainActivity : ComponentActivity() {
                     ) {
                         composable(Routes.WELCOME) {
                             WelcomeScreen(
+                                viewModel = portalViewModel,
                                 fontColor = activeFontColor,
                                 onNavigate = { route -> navController.navigate(route) }
                             )
@@ -123,7 +134,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun CustomBottomNavigation(
     navController: NavController,
-    fontColor: Color
+    fontColor: Color,
+    settingsState: Setting
 ) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
@@ -191,36 +203,46 @@ fun CustomBottomNavigation(
                 }
             )
 
-            // Customized AI Assistant bottom item: smaller size and lowered down y-offset
-            val isAssistantSelected = currentRoute == Routes.ASSISTANT
-            Column(
-                modifier = Modifier
-                    .clickable {
-                        navController.navigate(Routes.ASSISTANT) {
-                            popUpTo(Routes.WELCOME) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    }
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Star, // Beautiful star icon
-                    contentDescription = "المساعد الذكي",
-                    tint = if (isAssistantSelected) MaterialTheme.colorScheme.primary else fontColor.copy(alpha = 0.6f),
+            // Customized AI Assistant bottom item if enabled by Admin
+            if (settingsState.showAssistant) {
+                val isAssistantSelected = currentRoute == Routes.ASSISTANT
+                
+                val assistantIcon = when (settingsState.assistantIconType.uppercase()) {
+                    "NOTIFICATIONS" -> Icons.Default.Notifications
+                    "INFO" -> Icons.Default.Info
+                    "FACE" -> Icons.Default.Face
+                    else -> Icons.Default.Star
+                }
+
+                Column(
                     modifier = Modifier
-                        .size(18.dp) // Smaller size as requested (Standard icons are 24dp)
-                        .offset(y = 2.dp) // Lowered down slightly as requested
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = "المساعد",
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isAssistantSelected) MaterialTheme.colorScheme.primary else fontColor.copy(alpha = 0.6f)
-                )
+                        .clickable {
+                            navController.navigate(Routes.ASSISTANT) {
+                                popUpTo(Routes.WELCOME) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        }
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = assistantIcon,
+                        contentDescription = settingsState.assistantLabel,
+                        tint = if (isAssistantSelected) MaterialTheme.colorScheme.primary else fontColor.copy(alpha = 0.6f),
+                        modifier = Modifier
+                            .size(settingsState.assistantIconSize.dp)
+                            .offset(y = 2.dp)
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = settingsState.assistantLabel,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isAssistantSelected) MaterialTheme.colorScheme.primary else fontColor.copy(alpha = 0.6f)
+                    )
+                }
             }
         }
     }

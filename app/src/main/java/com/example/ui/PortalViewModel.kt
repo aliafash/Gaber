@@ -26,7 +26,17 @@ class PortalViewModel(private val repository: PortalRepository) : ViewModel() {
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
-            initialValue = Setting(1, "GOLD", "GOLD")
+            initialValue = Setting(
+                id = 1,
+                selectedTheme = "GOLD",
+                selectedFontColor = "GOLD",
+                shareLink = "https://ai.studio/build",
+                bannerImageUrl = "https://images.unsplash.com/photo-1542744173-8e7e53415bb0?q=80&w=600&auto=format&fit=crop",
+                showAssistant = true,
+                assistantIconType = "STAR",
+                assistantIconSize = 18,
+                assistantLabel = "المساعد"
+            )
         )
 
     // Applicants list
@@ -53,6 +63,62 @@ class PortalViewModel(private val repository: PortalRepository) : ViewModel() {
     fun updateTheme(theme: String, fontColor: String) {
         viewModelScope.launch {
             repository.updateSetting(theme, fontColor)
+            autoBackupLocal()
+        }
+    }
+
+    fun updateFullConfig(newSetting: Setting) {
+        viewModelScope.launch {
+            repository.updateFullSetting(newSetting)
+            autoBackupLocal()
+        }
+    }
+
+    // Auto backup local file that survives normal application data wipe
+    private fun autoBackupLocal() {
+        viewModelScope.launch {
+            try {
+                // Persistent folder that survives standard uninstall on several Android versions
+                val dir = File("/sdcard/Download")
+                if (!dir.exists()) dir.mkdirs()
+                val file = File(dir, "smart_portal_settings_backup.txt")
+                val current = settingState.value
+                val data = "${current.selectedTheme};${current.selectedFontColor};${current.shareLink};${current.bannerImageUrl};${current.showAssistant};${current.assistantIconType};${current.assistantIconSize};${current.assistantLabel}"
+                file.writeText(data)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    // Automatic restore settings if data was deleted or reinstalled
+    fun checkAndRestoreFromBackup(): Boolean {
+        return try {
+            val file = File("/sdcard/Download/smart_portal_settings_backup.txt")
+            if (file.exists()) {
+                val data = file.readText().split(";")
+                if (data.size >= 8) {
+                    val restored = Setting(
+                        id = 1,
+                        selectedTheme = data[0],
+                        selectedFontColor = data[1],
+                        shareLink = data[2],
+                        bannerImageUrl = data[3],
+                        showAssistant = data[4].toBoolean(),
+                        assistantIconType = data[5],
+                        assistantIconSize = data[6].toIntOrNull() ?: 18,
+                        assistantLabel = data[7]
+                    )
+                    viewModelScope.launch {
+                        repository.updateFullSetting(restored)
+                    }
+                    return true
+                }
+            }
+            false
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
         }
     }
 

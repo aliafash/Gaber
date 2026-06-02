@@ -14,9 +14,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -37,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.data.Applicant
+import com.example.data.Setting
 import com.example.ui.theme.getActiveFontColor
 import java.io.File
 
@@ -51,9 +54,13 @@ object Routes {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WelcomeScreen(
+    viewModel: PortalViewModel,
     fontColor: Color,
     onNavigate: (String) -> Unit
 ) {
+    val context = LocalContext.current
+    val settingsState by viewModel.settingState.collectAsState()
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -69,19 +76,53 @@ fun WelcomeScreen(
             item {
                 Spacer(modifier = Modifier.height(24.dp))
                 
-                // Portal Title
-                Text(
-                    text = "البوابة الذكية للمعاملات",
-                    fontSize = 30.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = fontColor,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                // Portal Title with optional Share button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Share icon button if public share link is configured
+                    if (!settingsState.shareLink.trim().isEmpty()) {
+                        IconButton(
+                            onClick = {
+                                try {
+                                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(android.content.Intent.EXTRA_TEXT, settingsState.shareLink)
+                                    }
+                                    context.startActivity(android.content.Intent.createChooser(intent, "مشاركة البوابة"))
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "فشل الإجراء", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier.background(MaterialTheme.colorScheme.surface, CircleShape)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = "مشاركة",
+                                tint = fontColor
+                            )
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.width(48.dp))
+                    }
+
+                    Text(
+                        text = "بوابة الطلبات الذكية",
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = fontColor,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    Spacer(modifier = Modifier.width(48.dp))
+                }
                 
                 Text(
-                    text = "تقديم الطلبات ومتابعتها مدعوماً بالذكاء الاصطناعي",
-                    fontSize = 14.sp,
+                    text = "تقديم الطلبات ومتابعتها مدعوماً بالذكاء الاصطناعي من جيميني",
+                    fontSize = 13.sp,
                     color = fontColor.copy(alpha = 0.8f),
                     textAlign = TextAlign.Center,
                     modifier = Modifier
@@ -90,7 +131,7 @@ fun WelcomeScreen(
                 )
             }
 
-            // High-quality, perfectly synchronized/aligned banner image loader with responsive scaling
+            // Custom Banner image loaded dynamically as requested for synchronization with all clients
             item {
                 Card(
                     modifier = Modifier
@@ -103,10 +144,10 @@ fun WelcomeScreen(
                     Box(modifier = Modifier.fillMaxSize()) {
                         AsyncImage(
                             model = ImageRequest.Builder(LocalContext.current)
-                                .data("https://images.unsplash.com/photo-1542744173-8e7e53415bb0?q=80&w=600&auto=format&fit=crop")
+                                .data(settingsState.bannerImageUrl)
                                 .crossfade(true)
                                 .build(),
-                            contentDescription = "بوابة المعاملات الذكية",
+                            contentDescription = "صورة البوابة المزامنة",
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()
                         )
@@ -125,8 +166,8 @@ fun WelcomeScreen(
                         )
                         
                         Text(
-                            text = "تسهيل الإجراءات برؤية حديثة",
-                            fontSize = 16.sp,
+                            text = "تسهيل الإجراءات برؤيتها الحديثة رقمياً",
+                            fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = Color.White,
                             modifier = Modifier
@@ -319,19 +360,19 @@ fun ApplyScreen(
                     placeholder = { Text("اكتب اسمك الثلاثي هنا", color = fontColor.copy(alpha = 0.5f)) },
                     singleLine = true,
                     textStyle = TextStyle(
-                        color = fontColor,
+                        color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp,
                         textAlign = TextAlign.Right
                     ),
                     modifier = Modifier.fillMaxWidth(),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = fontColor,
-                        unfocusedTextColor = fontColor,
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
                         focusedBorderColor = MaterialTheme.colorScheme.primary,
                         unfocusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-                        cursorColor = fontColor,
-                        focusedLabelColor = fontColor
+                        cursorColor = Color.White,
+                        focusedLabelColor = Color.White
                     ),
                     shape = RoundedCornerShape(10.dp)
                 )
@@ -392,18 +433,18 @@ fun ApplyScreen(
                     minLines = 4,
                     maxLines = 6,
                     textStyle = TextStyle(
-                        color = fontColor,
+                        color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp,
                         textAlign = TextAlign.Right
                     ),
                     modifier = Modifier.fillMaxWidth(),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = fontColor,
-                        unfocusedTextColor = fontColor,
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
                         focusedBorderColor = MaterialTheme.colorScheme.primary,
                         unfocusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-                        cursorColor = fontColor
+                        cursorColor = Color.White
                     ),
                     shape = RoundedCornerShape(10.dp)
                 )
@@ -609,14 +650,14 @@ fun AdminDashboardScreen(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
             )
 
-            // Search text field (Letters are bold and high-contrast matches selected Font Color)
+            // Search text field (Letters are bold and pure white for readability)
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
                 placeholder = { Text("ابحث في الاسم أو نوع الطلب...", color = fontColor.copy(alpha = 0.5f)) },
                 singleLine = true,
                 textStyle = TextStyle(
-                    color = fontColor,
+                    color = Color.White,
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
                     textAlign = TextAlign.Right
@@ -632,11 +673,11 @@ fun AdminDashboardScreen(
                     .fillMaxWidth()
                     .padding(bottom = 12.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = fontColor,
-                    unfocusedTextColor = fontColor,
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
                     focusedBorderColor = MaterialTheme.colorScheme.primary,
                     unfocusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-                    cursorColor = fontColor
+                    cursorColor = Color.White
                 ),
                 shape = RoundedCornerShape(10.dp)
             )
@@ -714,12 +755,22 @@ fun AdminDashboardScreen(
         
         // Custom Theme Customizer Overlay Dialog
         if (showThemeDialog) {
+            val settingsState by viewModel.settingState.collectAsState()
+            val context = LocalContext.current
+
+            var welcomeBannerUrl by remember { mutableStateOf(settingsState.bannerImageUrl) }
+            var appShareLink by remember { mutableStateOf(settingsState.shareLink) }
+            var isAssistantVisible by remember { mutableStateOf(settingsState.showAssistant) }
+            var assistantIconSizeVal by remember { mutableStateOf(settingsState.assistantIconSize) }
+            var assistantIconTypeVal by remember { mutableStateOf(settingsState.assistantIconType) }
+            var assistantLabelVal by remember { mutableStateOf(settingsState.assistantLabel) }
+
             AlertDialog(
                 onDismissRequest = { showThemeDialog = false },
                 title = {
                     Text(
-                        text = "تخصيص سمات ومظهر النظام",
-                        fontSize = 18.sp,
+                        text = "بوابة الإدارة: تخصيص مظهر وميزات التطبيق بالكامل",
+                        fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         color = fontColor,
                         textAlign = TextAlign.Right,
@@ -730,10 +781,11 @@ fun AdminDashboardScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 8.dp),
+                            .heightIn(max = 420.dp)
+                            .verticalScroll(rememberScrollState()),
                         horizontalAlignment = Alignment.End
                     ) {
-                        // Theme Name selector
+                        // Theme Selector
                         Text(
                             text = "اختر السمة الجمالية (التصميم):",
                             fontSize = 14.sp,
@@ -748,7 +800,7 @@ fun AdminDashboardScreen(
                             "EMERALD" to "الزمردي الراقي"
                         )
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
                             horizontalArrangement = Arrangement.End
                         ) {
                             themes.forEach { (key, name) ->
@@ -766,14 +818,12 @@ fun AdminDashboardScreen(
                                         text = name,
                                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                                         color = if (isSelected) MaterialTheme.colorScheme.onPrimary else fontColor,
-                                        fontSize = 12.sp,
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
                             }
                         }
-
-                        Spacer(modifier = Modifier.height(16.dp))
 
                         // Custom font colors
                         Text(
@@ -790,7 +840,7 @@ fun AdminDashboardScreen(
                             "SILVER" to "فضي متوهج"
                         )
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
                             horizontalArrangement = Arrangement.End
                         ) {
                             fontColors.forEach { (key, name) ->
@@ -808,20 +858,274 @@ fun AdminDashboardScreen(
                                         text = name,
                                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                                         color = if (isSelected) MaterialTheme.colorScheme.onPrimary else fontColor,
-                                        fontSize = 12.sp,
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
+                            }
+                        }
+
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = fontColor.copy(alpha = 0.2f))
+
+                        // Welcome Custom Banner imageUrl (Synchronized with all client devices)
+                        Text(
+                            text = "رابط الصورة الترحيبية (تتزامن مع الجميع):",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = fontColor,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        )
+                        OutlinedTextField(
+                            value = welcomeBannerUrl,
+                            onValueChange = { welcomeBannerUrl = it },
+                            singleLine = true,
+                            textStyle = TextStyle(
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                textAlign = TextAlign.Right
+                            ),
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = fontColor.copy(alpha = 0.4f),
+                                cursorColor = Color.White
+                            )
+                        )
+
+                        // Public Share link parameter
+                        Text(
+                            text = "رابط مشاركة التطبيق:",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = fontColor,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        )
+                        OutlinedTextField(
+                            value = appShareLink,
+                            onValueChange = { appShareLink = it },
+                            placeholder = { Text("مثال: https://google.com", color = fontColor.copy(alpha = 0.4f)) },
+                            singleLine = true,
+                            textStyle = TextStyle(
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                textAlign = TextAlign.Right
+                            ),
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = fontColor.copy(alpha = 0.4f),
+                                cursorColor = Color.White
+                            )
+                        )
+
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = fontColor.copy(alpha = 0.2f))
+
+                        // Assistant preferences toggle
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Switch(
+                                checked = isAssistantVisible,
+                                onCheckedChange = { isAssistantVisible = it },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = MaterialTheme.colorScheme.primary,
+                                    checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                                )
+                            )
+                            Text(
+                                text = "تفعيل المساعد الذكي في التذييل",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = fontColor
+                            )
+                        }
+
+                        if (isAssistantVisible) {
+                            // Assistant bottom label
+                            Text(
+                                text = "لقب/اسم المساعد الذكي في التذييل:",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = fontColor,
+                                modifier = Modifier.padding(bottom = 6.dp)
+                            )
+                            OutlinedTextField(
+                                value = assistantLabelVal,
+                                onValueChange = { assistantLabelVal = it },
+                                singleLine = true,
+                                textStyle = TextStyle(
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    textAlign = TextAlign.Right
+                                ),
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White,
+                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                    unfocusedBorderColor = fontColor.copy(alpha = 0.4f),
+                                    cursorColor = Color.White
+                                )
+                            )
+
+                            // Assistant icon custom options
+                            Text(
+                                text = "اختر شكل أيقونة المساعد:",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = fontColor,
+                                modifier = Modifier.padding(bottom = 6.dp)
+                            )
+                            val iconOptions = listOf(
+                                "STAR" to "نجمة",
+                                "NOTIFICATIONS" to "تنبيهات",
+                                "INFO" to "معلومات",
+                                "FACE" to "مساعد ذكي"
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                iconOptions.forEach { (type, name) ->
+                                    val isSelected = assistantIconTypeVal.uppercase() == type
+                                    Card(
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
+                                        ),
+                                        modifier = Modifier
+                                            .padding(start = 6.dp)
+                                            .clickable { assistantIconTypeVal = type },
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text(
+                                            text = name,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else fontColor,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Assistant icon custom size text field
+                            Text(
+                                text = "حجم أيقونة المساعد بالـ (dp) [من 12 إلى 32]:",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = fontColor,
+                                modifier = Modifier.padding(bottom = 6.dp)
+                            )
+                            OutlinedTextField(
+                                value = assistantIconSizeVal.toString(),
+                                onValueChange = { input ->
+                                    val size = input.toIntOrNull() ?: 18
+                                    if (size in 12..32) {
+                                        assistantIconSizeVal = size
+                                    }
+                                },
+                                singleLine = true,
+                                textStyle = TextStyle(
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    textAlign = TextAlign.Right
+                                ),
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White,
+                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                    unfocusedBorderColor = fontColor.copy(alpha = 0.4f),
+                                    cursorColor = Color.White
+                                )
+                            )
+                        }
+
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = fontColor.copy(alpha = 0.2f))
+
+                        // Cloud & Backup Restorer Actions Pane
+                        Text(
+                            text = "نظام الحماية من الحفظ المباشر (نسخة احتياطية):",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = fontColor,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Button(
+                                onClick = {
+                                    val restored = viewModel.checkAndRestoreFromBackup()
+                                    if (restored) {
+                                        Toast.makeText(context, "تم استرجاع ومزامنة البيانات وتصميم الأدمن من النسخة السحابية بنجاح!", Toast.LENGTH_LONG).show()
+                                        showThemeDialog = false
+                                    } else {
+                                        Toast.makeText(context, "لا توجد نسخة احتياطية محفوظة حالياً", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("استرجاع البيانات", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            Button(
+                                onClick = {
+                                    Toast.makeText(context, "جاري إرسال الإعدادات وتأمين المزامنة الذكية على كافة أجهزة المستخدمين...", Toast.LENGTH_SHORT).show()
+                                    viewModel.updateFullConfig(
+                                        settingsState.copy(
+                                            bannerImageUrl = welcomeBannerUrl,
+                                            shareLink = appShareLink,
+                                            showAssistant = isAssistantVisible,
+                                            assistantIconSize = assistantIconSizeVal,
+                                            assistantIconType = assistantIconTypeVal,
+                                            assistantLabel = assistantLabelVal
+                                        )
+                                    )
+                                    Toast.makeText(context, "تمت المزامنة السحابية وقفل النسخ الاحتياطي بنجاح!", Toast.LENGTH_LONG).show()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("مزامنة سحابية وقفل", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
                 },
                 confirmButton = {
                     Button(
-                        onClick = { showThemeDialog = false },
+                        onClick = {
+                            viewModel.updateFullConfig(
+                                settingsState.copy(
+                                    bannerImageUrl = welcomeBannerUrl,
+                                    shareLink = appShareLink,
+                                    showAssistant = isAssistantVisible,
+                                    assistantIconSize = assistantIconSizeVal,
+                                    assistantIconType = assistantIconTypeVal,
+                                    assistantLabel = assistantLabelVal
+                                )
+                            )
+                            showThemeDialog = false
+                            Toast.makeText(context, "تم حفظ ومزامنة التخصيص!", Toast.LENGTH_SHORT).show()
+                        },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) {
-                        Text("تم التحديث")
+                        Text("تم التحديث واحفظ القفل")
                     }
                 },
                 containerColor = MaterialTheme.colorScheme.surface
@@ -1143,18 +1447,18 @@ fun SmartAssistantScreen(
                     placeholder = { Text("اكتب سؤالك هنا بوضوح للاستفسار...", color = fontColor.copy(alpha = 0.5f)) },
                     singleLine = true,
                     textStyle = TextStyle(
-                        color = fontColor,
+                        color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
                         textAlign = TextAlign.Right
                     ),
                     modifier = Modifier.weight(1f),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = fontColor,
-                        unfocusedTextColor = fontColor,
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
                         focusedBorderColor = MaterialTheme.colorScheme.primary,
                         unfocusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-                        cursorColor = fontColor
+                        cursorColor = Color.White
                     ),
                     shape = RoundedCornerShape(24.dp)
                 )

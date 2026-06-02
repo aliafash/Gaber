@@ -18,7 +18,13 @@ data class Applicant(
 data class Setting(
     @PrimaryKey val id: Int = 1,
     val selectedTheme: String = "GOLD", // "SLATE", "GOLD", "EMERALD"
-    val selectedFontColor: String = "GOLD" // "WHITE", "GOLD", "SILVER"
+    val selectedFontColor: String = "GOLD", // "WHITE", "GOLD", "SILVER"
+    val shareLink: String = "https://ai.studio/build",
+    val bannerImageUrl: String = "https://images.unsplash.com/photo-1542744173-8e7e53415bb0?q=80&w=600&auto=format&fit=crop",
+    val showAssistant: Boolean = true,
+    val assistantIconType: String = "STAR", // "STAR", "LIGHTBULB", "INFO", "CHAT"
+    val assistantIconSize: Int = 18,
+    val assistantLabel: String = "المساعد"
 )
 
 @Dao
@@ -47,7 +53,7 @@ interface PortalDao {
     suspend fun saveSetting(setting: Setting)
 }
 
-@Database(entities = [Applicant::class, Setting::class], version = 1, exportSchema = false)
+@Database(entities = [Applicant::class, Setting::class], version = 2, exportSchema = false)
 abstract class PortalDatabase : RoomDatabase() {
     abstract fun portalDao(): PortalDao
 }
