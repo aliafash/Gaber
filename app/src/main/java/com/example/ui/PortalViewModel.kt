@@ -1,509 +1,468 @@
 package com.example.ui
 
-import android.content.Context
-import android.net.Uri
-import android.widget.Toast
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.compose.ui.graphics.Color
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.api.GeminiHelper
+import com.example.api.GeminiManager
+import com.example.api.RequestAnalysisResult
 import com.example.data.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import java.io.File
 
-data class ChatMessage(
-    val sender: String, // "USER", "AI"
-    val text: String,
-    val timestamp: Long = System.currentTimeMillis()
-)
+sealed class SmartSummaryState {
+    object Idle : SmartSummaryState()
+    object Loading : SmartSummaryState()
+    data class Success(val summary: String) : SmartSummaryState()
+    data class Error(val message: String) : SmartSummaryState()
+}
 
-class PortalViewModel(private val repository: PortalRepository) : ViewModel() {
+sealed class SubmissionState {
+    object Idle : SubmissionState()
+    object ProcessingAI : SubmissionState() // Analyzing with Gemini
+    object Saving : SubmissionState()
+    object Success : SubmissionState()
+    data class Error(val message: String) : SubmissionState()
+}
 
-    // Language setting (AR / EN)
-    private val _currentLanguage = MutableStateFlow("AR")
-    val currentLanguage: StateFlow<String> = _currentLanguage.asStateFlow()
+class PortalViewModel(application: Application) : AndroidViewModel(application) {
 
-    fun toggleLanguage() {
-        _currentLanguage.value = if (_currentLanguage.value == "AR") "EN" else "AR"
+    private val repository = PortalRepository(application)
+    private val geminiManager = GeminiManager()
+
+    // --- Core Real-time Firebase flows ---
+    val allRequests = repository.allRequestsFlow
+    val categories = repository.categoriesFlow
+    val serviceProviders = repository.serviceProvidersFlow
+    val pendingProviders = repository.pendingProvidersFlow
+    val reviews = repository.reviewsFlow
+    val banners = repository.bannersFlow
+    val globalConfig = repository.globalConfigFlow
+
+    // --- Dynamic Interactive States ---
+    val activeLanguage = MutableStateFlow("ar") // "ar" or "en"
+    val isCitizenRole = MutableStateFlow(true) // true = Citizen/Public client, false = Authenticated Admin/Provider
+
+    // --- Active Form inputs ---
+    // A. Service Citizen Requests / Complaints
+    val titleState = MutableStateFlow("")
+    val categoryState = MutableStateFlow("")
+    val descriptionState = MutableStateFlow("")
+    val citizenNameState = MutableStateFlow("")
+    val citizenPhoneState = MutableStateFlow("")
+
+    // B. Service Provider Registry Form Inputs (👤 Icon Registration Form)
+    val regFullNameState = MutableStateFlow("")
+    val regPhoneState = MutableStateFlow("")
+    val regCategoryIdState = MutableStateFlow("") // Main category selected
+    val regAddressState = MutableStateFlow("")
+    val regDistrictState = MutableStateFlow("")
+    val regGpsState = MutableStateFlow("")
+    val regProfilePicState = MutableStateFlow("") // Base64 profile URI mock string or path
+    val regIdCardState = MutableStateFlow("") // Base64 ID Card URI
+
+    // C. Direct Manual Service Provider Form (Admin control page)
+    val adminManualNameState = MutableStateFlow("")
+    val adminManualPhoneState = MutableStateFlow("")
+    val adminManualCategoryIdState = MutableStateFlow("")
+    val adminManualAddressState = MutableStateFlow("")
+    val adminManualProfilePicState = MutableStateFlow("")
+
+    // D. Ad Banner Form inputs (Admin Panel)
+    val bannerImageUrlState = MutableStateFlow("")
+    val bannerRedirectLinkState = MutableStateFlow("")
+    val bannerSecondsState = MutableStateFlow("5")
+
+    // --- Filters properties ---
+    val filterStatus = MutableStateFlow("الكل") // "الكل", "قيد الانتظار", "قيد التنفيذ", "تم الحل"
+    val filterCategory = MutableStateFlow("الكل")
+    val citizenPhoneFilter = MutableStateFlow("") // Filter for specific citizen phone
+
+    private val _submissionState = MutableStateFlow<SubmissionState>(SubmissionState.Idle)
+    val submissionState: StateFlow<SubmissionState> = _submissionState.asStateFlow()
+
+    private val _summaryState = MutableStateFlow<SmartSummaryState>(SmartSummaryState.Idle)
+    val summaryState: StateFlow<SmartSummaryState> = _summaryState.asStateFlow()
+
+    private val _selectedRequest = MutableStateFlow<ServiceRequest?>(null)
+    val selectedRequest: StateFlow<ServiceRequest?> = _selectedRequest.asStateFlow()
+
+    // --- Smart Chatbot Assistant States ---
+    val chatMessages = MutableStateFlow<List<Pair<String, Boolean>>>(listOf(
+        "مرحباً بك! أنا مساعدك الذكي الافتراضي لبوابة الخدمات اليمنية 🇾🇪. يمكنك سؤالي عن أي شيء يخص الخدمات والوظائف والتسجيل والشكاوى." to false
+    ))
+    val isChatLoading = MutableStateFlow(false)
+
+    fun sendChatMessage(message: String) {
+        if (message.trim().isEmpty()) return
+        chatMessages.value = chatMessages.value + (message to true)
+        viewModelScope.launch {
+            isChatLoading.value = true
+            val cats = categories.value.map { if (activeLanguage.value == "ar") it.nameAr else it.nameEn }
+            val answer = geminiManager.chatWithAssistant(message, cats)
+            chatMessages.value = chatMessages.value + (answer to false)
+            isChatLoading.value = false
+        }
     }
 
-    // Theme and font settings
-    val settingState: StateFlow<Setting> = repository.settingFlow
-        .filterNotNull()
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = Setting()
+    fun clearChatHistory() {
+        chatMessages.value = listOf(
+            "مرحباً بك! أنا مساعدك الذكي الافتراضي لبوابة الخدمات اليمنية 🇾🇪. يمكنك سؤالي عن أي شيء يخص الخدمات والوظائف والتسجيل والشكاوى." to false
         )
-
-    // Lists
-    val allApplicants: StateFlow<List<Applicant>> = repository.allApplicants
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    val allSupervisors: StateFlow<List<Supervisor>> = repository.allSupervisors
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    val allCategories: StateFlow<List<Category>> = repository.allCategories
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    val allServiceProviders: StateFlow<List<ServiceProvider>> = repository.allServiceProviders
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    val allReviews: StateFlow<List<Review>> = repository.allReviews
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    val allActivityLogs: StateFlow<List<ActivityLog>> = repository.allActivityLogs
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    // Active Chat Session between User and Specific Provider
-    private val _chatMessagesWithProvider = MutableStateFlow<List<ChatMessageEntity>>(emptyList())
-    val chatMessagesWithProvider: StateFlow<List<ChatMessageEntity>> = _chatMessagesWithProvider.asStateFlow()
-
-    // Smart assistant chat messages
-    private val _chatMessages = MutableStateFlow<List<ChatMessage>>(
-        listOf(
-            ChatMessage("AI", "مرحباً بك في تطبيق بوابة الخدمات! أنا مساعدك الذكي. كيف يمكنني إرشادك اليوم؟")
-        )
-    )
-    val chatMessages: StateFlow<List<ChatMessage>> = _chatMessages.asStateFlow()
-
-    private val _isChatLoading = MutableStateFlow(false)
-    val isChatLoading: StateFlow<Boolean> = _isChatLoading.asStateFlow()
-
-    // Favorites Organization: Map of Folder -> List of Provider IDs
-    private val _favoritesByFolder = MutableStateFlow<Map<String, List<Int>>>(
-        mapOf("أعمال" to emptyList(), "شخصي" to emptyList())
-    )
-    val favoritesByFolder: StateFlow<Map<String, List<Int>>> = _favoritesByFolder.asStateFlow()
+    }
 
     init {
-        // Hydrate some default Categories if DB is empty
+        // Set default category states once loaded or keep placeholder
         viewModelScope.launch {
-            repository.allCategories.first().let { currentList ->
-                if (currentList.isEmpty()) {
-                    repository.saveCategory(Category(name = "صيانة منزلية", subCategoriesCsv = "كهرباء,سباكة,تكييف,تنظيف", isPinned = true, orderIndex = 0))
-                    repository.saveCategory(Category(name = "صحة ورعاية", subCategoriesCsv = "طبيب منزل,علاج طبيعي,ممرض,طبيب أطفال", isPinned = true, orderIndex = 1))
-                    repository.saveCategory(Category(name = "تعليم وتدريب", subCategoriesCsv = "دروس خصوصية,تعليم لغات,برمجة ومصمم", isPinned = false, orderIndex = 2))
-                    repository.saveCategory(Category(name = "نقل وخدمات لوجستية", subCategoriesCsv = "نقل أثاث,توصيل طلبات,شحن ثقيل", isPinned = false, orderIndex = 3))
-                }
-            }
-            repository.allSupervisors.first().let { supervisors ->
-                if (supervisors.isEmpty()) {
-                    repository.saveSupervisor(Supervisor(username = "maher", password = "123", is2FaEnabled = false))
+            categories.collect { list ->
+                if (list.isNotEmpty() && categoryState.value.isEmpty()) {
+                    categoryState.value = list.firstOrNull { it.isMain }?.nameAr ?: "صيانة منزلية"
                 }
             }
         }
     }
 
-    fun toggleFavorite(providerId: Int, folder: String) {
-        val current = _favoritesByFolder.value.toMutableMap()
-        val list = current[folder]?.toMutableList() ?: mutableListOf()
-        if (list.contains(providerId)) {
-            list.remove(providerId)
+    // --- Translation engine ---
+    fun translate(ar: String, en: String): String {
+        return if (activeLanguage.value == "ar") ar else en
+    }
+
+    fun toggleLanguage() {
+        activeLanguage.value = if (activeLanguage.value == "ar") "en" else "ar"
+    }
+
+    fun setRole(citizen: Boolean) {
+        isCitizenRole.value = citizen
+    }
+
+    fun selectRequest(request: ServiceRequest?) {
+        _selectedRequest.value = request
+        if (request == null) {
+            _summaryState.value = SmartSummaryState.Idle
         } else {
-            list.add(providerId)
-        }
-        current[folder] = list
-        _favoritesByFolder.value = current
-    }
-
-    fun createFavoritesFolder(folderName: String) {
-        if (folderName.trim().isEmpty()) return
-        val current = _favoritesByFolder.value.toMutableMap()
-        if (!current.containsKey(folderName)) {
-            current[folderName] = emptyList()
-            _favoritesByFolder.value = current
+            getSmartSummary(request)
         }
     }
 
-    fun loadChatForProvider(providerId: Int) {
-        viewModelScope.launch {
-            repository.getChatMessagesForProvider(providerId).collect { msgs ->
-                _chatMessagesWithProvider.value = msgs
-            }
-        }
+    fun resetSubmission() {
+        _submissionState.value = SubmissionState.Idle
     }
 
-    fun sendChatMessageToProvider(providerId: Int, text: String, senderType: String) {
-        if (text.trim().isEmpty()) return
-        viewModelScope.launch {
-            val msg = ChatMessageEntity(
-                providerId = providerId,
-                senderType = senderType,
-                messageText = text
+    // --- 1. Citizen complaint registration ---
+    fun submitServiceRequest() {
+        val title = titleState.value.trim()
+        val categoryIdx = categoryState.value
+        val desc = descriptionState.value.trim()
+        val name = citizenNameState.value.trim()
+        val phone = citizenPhoneState.value.trim()
+
+        if (title.isEmpty() || desc.isEmpty() || name.isEmpty() || phone.isEmpty()) {
+            _submissionState.value = SubmissionState.Error(
+                translate("الرجاء ملء جميع الحقول المطلوبة لرفع الطلب.", "Please fill in all required fields to submit.")
             )
-            repository.saveChatMessage(msg)
-            // Save log
-            repository.saveActivityLog(ActivityLog(username = senderType, action = "SEND_MSG", details = "أرسل رسالة إلى الموفر رقم $providerId"))
+            return
         }
-    }
 
-    fun logAction(username: String, action: String, details: String) {
         viewModelScope.launch {
-            repository.saveActivityLog(ActivityLog(username = username, action = action, details = details))
-        }
-    }
+            _submissionState.value = SubmissionState.ProcessingAI
 
-    fun updateTheme(theme: String, fontColor: String) {
-        viewModelScope.launch {
-            repository.updateSetting(theme, fontColor)
-            autoBackupLocal()
-        }
-    }
-
-    fun updateFullConfig(newSetting: Setting) {
-        viewModelScope.launch {
-            repository.updateFullSetting(newSetting)
-            autoBackupLocal()
-        }
-    }
-
-    // Export Excel CSV
-    fun exportProvidersToCsv(context: Context): String {
-        return try {
-            val providers = allServiceProviders.value
-            val csv = StringBuilder()
-            csv.append("ID,Full Name,Phone,Category,Sub-category,Residence,Work Address,Rating, clicks\n")
-            providers.forEach {
-                csv.append("${it.id},${it.fullName},${it.phone},${it.categoryName},${it.subCategoryName},${it.residenceArea},${it.workAddress},${it.ratingAvg},${it.clicksCount}\n")
-            }
-            val dir = File("/sdcard/Download")
-            if (!dir.exists()) dir.mkdirs()
-            val file = File(dir, "service_providers_export.csv")
-            file.writeText(csv.toString())
-            file.absolutePath
-        } catch (e: Exception) {
-            e.printStackTrace()
-            "خطأ: " + e.localizedMessage
-        }
-    }
-
-    fun exportReviewsToCsv(context: Context): String {
-        return try {
-            val reviews = allReviews.value
-            val csv = StringBuilder()
-            csv.append("ID,ProviderID,Reviewer,Rating,Comment,Timestamp\n")
-            reviews.forEach {
-                csv.append("${it.id},${it.providerId},${it.reviewerName},${it.rating},${it.comment},${it.timestamp}\n")
-            }
-            val dir = File("/sdcard/Download")
-            if (!dir.exists()) dir.mkdirs()
-            val file = File(dir, "reviews_export.csv")
-            file.writeText(csv.toString())
-            file.absolutePath
-        } catch (e: Exception) {
-            e.printStackTrace()
-            "خطأ: " + e.localizedMessage
-        }
-    }
-
-    // Auto backup local file to download survive uninstall/data-clear
-    private fun autoBackupLocal() {
-        viewModelScope.launch {
-            try {
-                val dir = File("/sdcard/Download")
-                if (!dir.exists()) dir.mkdirs()
-                val file = File(dir, "service_portal_settings_backup.txt")
-                val current = settingState.value
-                val lines = listOf(
-                    current.selectedTheme,
-                    current.selectedFontColor,
-                    current.shareLink,
-                    current.bannerImageUrl,
-                    current.showAssistant.toString(),
-                    current.assistantIconType,
-                    current.assistantIconSize.toString(),
-                    current.assistantLabel,
-                    current.footerText,
-                    current.welcomeText,
-                    current.welcomeTextSize.toString(),
-                    current.welcomeTextColor,
-                    current.contactEmail,
-                    current.contactPhone,
-                    current.customAdvertText,
-                    current.isMaintenanceMode.toString(),
-                    current.maintenanceMessage
-                )
-                file.writeText(lines.joinToString("\n"))
+            // Invoke Gemini API for priority prediction & category verification
+            val analysis: RequestAnalysisResult = try {
+                geminiManager.analyzeNewRequest(title, categoryIdx, desc)
             } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-    }
-
-    fun backupDatabaseToDownload(): String {
-        return try {
-            val dir = File("/sdcard/Download")
-            if (!dir.exists()) dir.mkdirs()
-            // Write a JSON-alike state export of settings, categories, supervisors to Download/service_portal_db_backup.json
-            val backupData = StringBuilder()
-            backupData.append("SETTINGS_THEME::${settingState.value.selectedTheme}\n")
-            backupData.append("SETTINGS_FONT::${settingState.value.selectedFontColor}\n")
-            backupData.append("FOOTER_TEXT::${settingState.value.footerText}\n")
-            backupData.append("WELCOME_TEXT::${settingState.value.welcomeText}\n")
-            backupData.append("CONTACT_EMAIL::${settingState.value.contactEmail}\n")
-            backupData.append("CONTACT_PHONE::${settingState.value.contactPhone}\n")
-            
-            val file = File(dir, "service_portal_db_backup.txt")
-            file.writeText(backupData.toString())
-            file.absolutePath
-        } catch (e: Exception) {
-            e.printStackTrace()
-            "فشل النسخ الاحتياطي: " + e.localizedMessage
-        }
-    }
-
-    fun checkAndRestoreFromBackup(): Boolean {
-        return try {
-            val file = File("/sdcard/Download/service_portal_settings_backup.txt")
-            if (file.exists()) {
-                val lines = file.readLines()
-                if (lines.size >= 8) {
-                    val restored = Setting(
-                        id = 1,
-                        selectedTheme = lines.getOrElse(0) { "GOLD" },
-                        selectedFontColor = lines.getOrElse(1) { "GOLD" },
-                        shareLink = lines.getOrElse(2) { "https://ai.studio/build" },
-                        bannerImageUrl = lines.getOrElse(3) { "" },
-                        showAssistant = lines.getOrElse(4) { "true" }.toBoolean(),
-                        assistantIconType = lines.getOrElse(5) { "FACE" },
-                        assistantIconSize = lines.getOrElse(6) { "18" }.toIntOrNull() ?: 18,
-                        assistantLabel = lines.getOrElse(7) { "خدمات" },
-                        footerText = lines.getOrElse(8) { "WAM777644670" },
-                        welcomeText = lines.getOrElse(9) { "أهلاً بك في بوابة الخدمات الشاملة" },
-                        welcomeTextSize = lines.getOrElse(10) { "18" }.toIntOrNull() ?: 18,
-                        welcomeTextColor = lines.getOrElse(11) { "GOLD" },
-                        contactEmail = lines.getOrElse(12) { "ma7777644@gmail.com" },
-                        contactPhone = lines.getOrElse(13) { "777644670" },
-                        customAdvertText = lines.getOrElse(14) { "بوابة الخدمات توفر حلولاً متكاملة لتسهيل معاملاتكم اليومية بأمان وسهولة." },
-                        isMaintenanceMode = lines.getOrElse(15) { "false" }.toBoolean(),
-                        maintenanceMessage = lines.getOrElse(16) { "التطبيق حالياً في وضع الصيانة لترقية الأنظمة. سنعود قريباً!" }
+                RequestAnalysisResult(
+                    predictedCategory = categoryIdx,
+                    predictedPriority = "LOW",
+                    reasoning = translate(
+                        "تم تصنيف الطلب تلقائيًا وجاري تحويله للمعاينة الميدانية.",
+                        "Request categorized automatically and pending inspection."
                     )
-                    viewModelScope.launch {
-                        repository.updateFullSetting(restored)
-                    }
-                    return true
-                }
-            }
-            false
-        } catch (e: Exception) {
-            e.printStackTrace()
-            false
-        }
-    }
-
-    // Submit a new professional registration request
-    fun submitCandidateApplication(
-        context: Context,
-        fullName: String,
-        phone: String,
-        category: String,
-        subCategory: String,
-        profileImageUri: Uri?,
-        workAddress: String,
-        residenceArea: String,
-        mapLocation: String,
-        idCardUri: Uri?,
-        onSuccess: () -> Unit,
-        onError: (String) -> Unit
-    ) {
-        viewModelScope.launch {
-            if (fullName.split(" ").filter { it.isNotEmpty() }.size < 3) {
-                onError("الرجاء إدخال الاسم الثلاثي بالكامل")
-                return@launch
-            }
-            if (phone.trim().isEmpty()) {
-                onError("الرجاء إدخال رقم الهاتف للتواصل")
-                return@launch
-            }
-            if (category.trim().isEmpty() || subCategory.trim().isEmpty()) {
-                onError("الرجاء اختيار القسم والخدمة المطلوبة")
-                return@launch
-            }
-            if (profileImageUri == null) {
-                onError("الصورة الشخصية لمقدم الخدمة إجبارية!")
-                return@launch
-            }
-            if (workAddress.trim().isEmpty()) {
-                onError("الرجاء تحديد عنوان ورشة/مكتب العمل الحالي")
-                return@launch
-            }
-            if (residenceArea.trim().isEmpty()) {
-                onError("الرجاء تحديد منطقة السكن والإقامة الحالية")
-                return@launch
+                )
             }
 
-            var localProfilePath: String? = null
-            profileImageUri.let { uri ->
-                localProfilePath = copyUriToInternalStorage(context, uri)
-                if (localProfilePath == null) {
-                    onError("فشل في حفظ الصورة الشخصية محلياً")
-                    return@launch
-                }
-            }
+            _submissionState.value = SubmissionState.Saving
 
-            var localIdCardPath: String? = null
-            idCardUri?.let { uri ->
-                localIdCardPath = copyUriToInternalStorage(context, uri)
-            }
-
-            val applicant = Applicant(
-                fullName = fullName,
-                phone = phone,
-                category = category,
-                serviceType = subCategory,
-                profileImagePath = localProfilePath,
-                workAddress = workAddress,
-                residenceArea = residenceArea,
-                mapLocation = mapLocation.ifEmpty { null },
-                idCardImagePath = localIdCardPath
+            val request = ServiceRequest(
+                title = title,
+                category = analysis.predictedCategory.ifEmpty { categoryIdx },
+                description = desc,
+                citizenName = name,
+                citizenPhone = phone,
+                priority = analysis.predictedPriority,
+                priorityReason = analysis.reasoning,
+                status = "PENDING"
             )
 
             try {
-                repository.insertApplicant(applicant)
-                repository.saveActivityLog(ActivityLog(username = "USER_PRO", action = "SUBMIT_APPLY", details = "قدم طلب انضمام باسم $fullName"))
-                onSuccess()
+                repository.insertRequest(request)
+                if (citizenPhoneFilter.value.isEmpty()) {
+                    citizenPhoneFilter.value = phone
+                }
+
+                // Reset inputs
+                titleState.value = ""
+                descriptionState.value = ""
+                citizenNameState.value = ""
+                citizenPhoneState.value = ""
+
+                _submissionState.value = SubmissionState.Success
             } catch (e: Exception) {
-                onError("حدث خطأ أثناء رفع الطلب: ${e.localizedMessage}")
-            }
-        }
-    }
-
-    private fun copyUriToInternalStorage(context: Context, uri: Uri): String? {
-        return try {
-            val inputStream = context.contentResolver.openInputStream(uri) ?: return null
-            val file = File(context.cacheDir, "pro_${System.currentTimeMillis()}.jpg")
-            file.outputStream().use { outputStream ->
-                inputStream.copyTo(outputStream)
-            }
-            file.absolutePath
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
-        }
-    }
-
-    fun processRegistrationRequest(applicant: Applicant, approve: Boolean, supervisorName: String) {
-        viewModelScope.launch {
-            if (approve) {
-                // Add to approved service providers
-                val provider = ServiceProvider(
-                    fullName = applicant.fullName,
-                    phone = applicant.phone,
-                    categoryName = applicant.category,
-                    subCategoryName = applicant.serviceType,
-                    profileImagePath = applicant.profileImagePath,
-                    workAddress = applicant.workAddress,
-                    residenceArea = applicant.residenceArea,
-                    mapLocation = applicant.mapLocation,
-                    idCardImagePath = applicant.idCardImagePath
+                _submissionState.value = SubmissionState.Error(
+                    translate("حدث خطأ أثناء الاتصال أو المزامنة: ", "An error occurred while connecting or syncing: ") + e.message
                 )
-                repository.saveServiceProvider(provider)
-                repository.deleteApplicant(applicant.id)
-                repository.saveActivityLog(ActivityLog(username = supervisorName, action = "APPROVE_REGR", details = "وافق على تسجيل ${applicant.fullName}"))
-            } else {
-                repository.deleteApplicant(applicant.id)
-                repository.saveActivityLog(ActivityLog(username = supervisorName, action = "REJECT_REGR", details = "رفض تسجيل ${applicant.fullName}"))
             }
         }
     }
 
-    fun addProviderDirectly(provider: ServiceProvider, username: String) {
-        viewModelScope.launch {
-            repository.saveServiceProvider(provider)
-            repository.saveActivityLog(ActivityLog(username = username, action = "ADD_PRO_DIRECT", details = "أضاف مقدم خدمة مباشرة: ${provider.fullName}"))
+    fun updateRequestStatus(id: String, newStatus: String, notes: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.updateRequestStatus(id, newStatus, notes)
+            val updated = repository.getRequestById(id)
+            if (_selectedRequest.value?.id == id && updated != null) {
+                _selectedRequest.value = updated
+                getSmartSummary(updated)
+            }
         }
     }
 
-    fun updateProviderPinStatus(provider: ServiceProvider, isPinned: Boolean, username: String) {
+    fun getSmartSummary(request: ServiceRequest) {
         viewModelScope.launch {
-            repository.updateServiceProvider(provider.copy(isPinnedToTop = isPinned))
-            repository.saveActivityLog(ActivityLog(username = username, action = "PIN_PROVIDER", details = "تعديل تثبيت الموفر ${provider.fullName} إلى $isPinned"))
+            _summaryState.value = SmartSummaryState.Loading
+            try {
+                val summary = geminiManager.generateSmartSummary(
+                    title = request.title,
+                    category = request.category,
+                    description = request.description,
+                    status = request.status,
+                    resolutionNote = request.resolutionNote
+                )
+                _summaryState.value = SmartSummaryState.Success(summary)
+            } catch (e: Exception) {
+                _summaryState.value = SmartSummaryState.Error(
+                    translate("تعذر صياغة خارطة الطريق حالياً.", "Unable to compile the dynamic road map.")
+                )
+            }
         }
     }
 
-    fun updateProviderRecommendedStatus(provider: ServiceProvider, isRec: Boolean, username: String) {
-        viewModelScope.launch {
-            repository.updateServiceProvider(provider.copy(isRecommended = isRec))
-            repository.saveActivityLog(ActivityLog(username = username, action = "RECOMMEND_PROVIDER", details = "تعديل التوصية للموفر ${provider.fullName} إلى $isRec"))
+    fun deleteRequest(request: ServiceRequest) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.deleteRequest(request)
+            if (_selectedRequest.value?.id == request.id) {
+                _selectedRequest.value = null
+            }
         }
     }
 
-    fun deleteProvider(id: Int, username: String) {
+    // --- 2. Professional Provider Registration Form (👤 Form) ---
+    fun submitProviderRegistration() : String {
+        val name = regFullNameState.value.trim()
+        val phone = regPhoneState.value.trim()
+        val categoryId = regCategoryIdState.value
+        val address = regAddressState.value.trim()
+        val district = regDistrictState.value.trim()
+        val gps = regGpsState.value.trim()
+        val profilePic = regProfilePicState.value
+        val idCard = regIdCardState.value
+
+        if (name.isEmpty() || phone.isEmpty() || categoryId.isEmpty() || address.isEmpty() || district.isEmpty() || profilePic.isEmpty()) {
+            return translate("الرجاء ملء جميع الحقول المطلوبة ورفع الصورة الشخصية.", "Please fill in all required fields and upload your profile picture.")
+        }
+
         viewModelScope.launch {
-            val provider = repository.getServiceProviderById(id)
-            repository.deleteServiceProvider(id)
-            repository.saveActivityLog(ActivityLog(username = username, action = "DELETE_PROVIDER", details = "حذف مقدم الخدمة: ${provider?.fullName ?: id}"))
+            val pending = PendingProvider(
+                name = name,
+                phone = phone,
+                categoryId = categoryId,
+                address = address,
+                district = district,
+                gps = gps,
+                profilePic = profilePic,
+                idCardPic = idCard,
+                status = "PENDING",
+                dateCreated = System.currentTimeMillis()
+            )
+            repository.submitRegistrationRequest(pending)
+            
+            // Success cleanup
+            regFullNameState.value = ""
+            regPhoneState.value = ""
+            regAddressState.value = ""
+            regDistrictState.value = ""
+            regGpsState.value = ""
+            regProfilePicState.value = ""
+            regIdCardState.value = ""
+        }
+        return "SUCCESS"
+    }
+
+    // --- 3. Dynamic Interactive Admin Actions ---
+    fun insertCategoryDirect(nameAr: String, nameEn: String, parentId: String?, isMain: Boolean, order: Int) {
+        viewModelScope.launch {
+            val category = Category(
+                nameAr = nameAr,
+                nameEn = nameEn,
+                parentId = parentId,
+                isMain = isMain,
+                order = order
+            )
+            repository.insertCategory(category)
         }
     }
 
-    fun addReview(providerId: Int, reviewer: String, rating: Int, comment: String) {
+    fun deleteCategoryDirect(category: Category) {
         viewModelScope.launch {
-            repository.saveReview(Review(providerId = providerId, reviewerName = reviewer, rating = rating, comment = comment))
+            repository.deleteCategory(category)
         }
     }
 
-    fun deleteReview(reviewId: Int, providerId: Int, username: String) {
+    fun submitManualProvider() : String {
+        val name = adminManualNameState.value.trim()
+        val phone = adminManualPhoneState.value.trim()
+        val categoryId = adminManualCategoryIdState.value
+        val address = adminManualAddressState.value.trim()
+        val profile = adminManualProfilePicState.value
+
+        if (name.isEmpty() || phone.isEmpty() || categoryId.isEmpty() || address.isEmpty()) {
+            return translate("الرجاء تعبئة البيانات بالكامل لإضافة مقدم الخدمة السريع.", "Please fill in all details for adding quick provider.")
+        }
+
         viewModelScope.launch {
-            repository.deleteReview(reviewId, providerId)
-            repository.saveActivityLog(ActivityLog(username = username, action = "DELETE_REVIEW", details = "حذف تعليق رقم $reviewId"))
+            val provider = ServiceProvider(
+                name = name,
+                phone = phone,
+                categoryId = categoryId,
+                address = address,
+                profilePic = profile.ifEmpty { "ic_default" },
+                isPinned = false,
+                isRecommended = false,
+                rating = 5.0f,
+                ratingCount = 1
+            )
+            repository.insertServiceProvider(provider)
+            
+            // Clean fields
+            adminManualNameState.value = ""
+            adminManualPhoneState.value = ""
+            adminManualAddressState.value = ""
+            adminManualProfilePicState.value = ""
+        }
+        return "SUCCESS"
+    }
+
+    fun approveRegistration(pending: PendingProvider) {
+        viewModelScope.launch {
+            repository.approveRegistrationRequest(pending)
         }
     }
 
-    fun addManagerSupervisor(supervisor: Supervisor, adminName: String) {
+    fun rejectRegistration(pendingId: String, reason: String) {
         viewModelScope.launch {
-            repository.saveSupervisor(supervisor)
-            repository.saveActivityLog(ActivityLog(username = adminName, action = "ADD_SUPERVISOR", details = "أضاف المشرف ${supervisor.username}"))
+            repository.rejectRegistrationRequest(pendingId, reason)
         }
     }
 
-    fun deleteManagerSupervisor(id: Int, adminName: String) {
+    fun toggleRecommendProvider(providerId: String, isRecommended: Boolean) {
         viewModelScope.launch {
-            repository.deleteSupervisor(id)
-            repository.saveActivityLog(ActivityLog(username = adminName, action = "DELETE_SUPERVISOR", details = "حذف مشرف بالمعرف $id"))
+            val prov = serviceProviders.value.find { it.id == providerId } ?: return@launch
+            repository.updateServiceProviderProperties(providerId, isPinned = prov.isPinned, isRecommended = isRecommended)
         }
     }
 
-    fun addMainCategory(category: Category, adminName: String) {
+    fun togglePinProvider(providerId: String, isPinned: Boolean) {
         viewModelScope.launch {
-            repository.saveCategory(category)
-            repository.saveActivityLog(ActivityLog(username = adminName, action = "ADD_CATEGORY", details = "أضاف قسم رئيسي ${category.name}"))
+            val prov = serviceProviders.value.find { it.id == providerId } ?: return@launch
+            repository.updateServiceProviderProperties(providerId, isPinned = isPinned, isRecommended = prov.isRecommended)
         }
     }
 
-    fun deleteMainCategory(id: Int, adminName: String) {
+    fun deleteServiceProviderDirect(provider: ServiceProvider) {
         viewModelScope.launch {
-            repository.deleteCategory(id)
-            repository.saveActivityLog(ActivityLog(username = adminName, action = "DELETE_CATEGORY", details = "حذف القسم المعرف $id"))
+            repository.deleteServiceProvider(provider)
         }
     }
 
-    fun incrementClicks(provider: ServiceProvider) {
+    // --- 4. Dynamic Ad Banners Management ---
+    fun submitNewBanner() : String {
+        val url = bannerImageUrlState.value.trim()
+        val redirect = bannerRedirectLinkState.value.trim()
+        val seconds = bannerSecondsState.value.toIntOrNull() ?: 5
+
+        if (url.isEmpty()) {
+            return translate("الرجاء إدخال عنوان صورة صالح للإعلان.", "Please specify a valid image link for banner advertisement.")
+        }
+
         viewModelScope.launch {
-            repository.updateServiceProvider(provider.copy(clicksCount = provider.clicksCount + 1))
+            val banner = Banner(
+                imageUrl = url,
+                redirectLink = redirect,
+                durationSeconds = seconds,
+                dateCreated = System.currentTimeMillis()
+            )
+            repository.insertBanner(banner)
+            
+            bannerImageUrlState.value = ""
+            bannerRedirectLinkState.value = ""
+            bannerSecondsState.value = "5"
+        }
+        return "SUCCESS"
+    }
+
+    fun deleteBannerDirect(banner: Banner) {
+        viewModelScope.launch {
+            repository.deleteBanner(banner)
         }
     }
 
-    // Ask Gemini question
-    fun askGeminiAssistant(query: String) {
-        if (query.trim().isEmpty()) return
-        
-        viewModelScope.launch {
-            val userMsg = ChatMessage("USER", query)
-            _chatMessages.value = _chatMessages.value + userMsg
-            _isChatLoading.value = true
-
-            val promptContext = "أنت مساعد ذكي لبوابة الخدمات الشاملة للجمهور. وجه المستخدم باللغة العربية باختصار مذهل لا يتجاوز سطرين. السؤال المطروح هو: $query"
-            val aiResponse = GeminiHelper.askGemini(promptContext)
-
-            _chatMessages.value = _chatMessages.value + ChatMessage("AI", aiResponse)
-            _isChatLoading.value = false
-        }
+    // --- 5. Secret Config (Backdoor) Updates ---
+    fun saveGlobalConfig(config: AppConfig) {
+        repository.saveAppConfig(config)
     }
 
-    fun clearChat() {
-        _chatMessages.value = listOf(
-            ChatMessage("AI", "مرحباً بك! كيف يمكنني مساعدتك اليوم بخصوص خدماتنا؟")
+    fun updateBackdoorSettings(
+        appNameAr: String,
+        appNameEn: String,
+        primaryHexColor: String,
+        secondaryHexColor: String,
+        promoFooter: String,
+        welcomeAr: String,
+        welcomeEn: String,
+        phone: String,
+        email: String,
+        adminPass: String
+    ) {
+        val current = globalConfig.value
+        val config = current.copy(
+            appNameAr = appNameAr.ifEmpty { current.appNameAr },
+            appNameEn = appNameEn.ifEmpty { current.appNameEn },
+            primaryColor = primaryHexColor.ifEmpty { current.primaryColor },
+            secondaryColor = secondaryHexColor.ifEmpty { current.secondaryColor },
+            promoFooter = promoFooter.ifEmpty { current.promoFooter },
+            welcomeMessageAr = welcomeAr.ifEmpty { current.welcomeMessageAr },
+            welcomeMessageEn = welcomeEn.ifEmpty { current.welcomeMessageEn },
+            supportPhone = phone.ifEmpty { current.supportPhone },
+            supportEmail = email.ifEmpty { current.supportEmail },
+            adminPassword = adminPass.ifEmpty { current.adminPassword }
         )
+        repository.saveAppConfig(config)
+    }
+
+    // Color conversion utilities
+    fun getPrimaryColor(): Color {
+        return parseHexColor(globalConfig.value.primaryColor, Color(0xFF007AFF))
+    }
+
+    fun getSecondaryColor(): Color {
+        return parseHexColor(globalConfig.value.secondaryColor, Color(0xFF34C759))
+    }
+
+    fun parseHexColor(hex: String, fallback: Color): Color {
+        return try {
+            Color(android.graphics.Color.parseColor(hex))
+        } catch (e: Exception) {
+            fallback
+        }
     }
 }

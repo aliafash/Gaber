@@ -2,25 +2,31 @@ package com.example.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// SLATE Theme Colors
-val SlatePrimary = Color(0xFF94A3B8)
-val SlateSecondary = Color(0xFF64748B)
-val SlateBackground = Color(0xFF0F172A)
-val SlateSurface = Color(0xFF1E293B)
+// Light Palette Colors
+val LightPrimary = Color(0xFF005F73)      // Trusted Teal Blue
+val LightOnPrimary = Color(0xFFFFFFFF)
+val LightPrimaryContainer = Color(0xFF94D2BD)
+val LightSecondary = Color(0xFF0A9396)
+val LightBackground = Color(0xFFF8F9FA)  // Safe clean background
+val LightSurface = Color(0xFFFFFFFF)
+val LightError = Color(0xFFD62828)
 
-// GOLD Theme Colors
-val GoldPrimary = Color(0xFFFFD700)
-val GoldSecondary = Color(0xFFD4AF37)
-val GoldBackground = Color(0xFF121212)
-val GoldSurface = Color(0xFF1C1C1E)
+// Dark Palette Colors (Premium Slate & Rich Green Accent)
+val DarkPrimary = Color(0xFF0A9396)
+val DarkOnPrimary = Color(0xFFE0F2F1)
+val DarkPrimaryContainer = Color(0xFF005F73)
+val DarkSecondary = Color(0xFF94D2BD)
+val DarkBackground = Color(0xFF0C141C)   // Deep premium slate blue-black
+val DarkSurface = Color(0xFF16222F)      // Dark premium surface
+val DarkError = Color(0xFFE63946)
 
-// EMERALD Theme Colors
-val EmeraldPrimary = Color(0xFF10B981)
-val EmeraldSecondary = Color(0xFF065F46)
-val EmeraldBackground = Color(0xFF022C22)
-val EmeraldSurface = Color(0xFF064E3B)
+// Domain Categorization Colors
+val ColorGovGreen = Color(0xFF2EC4B6)
+val ColorMunicipal = Color(0xFFF77F00)
+val ColorHealth = Color(0xFFD62828)
+val ColorWater = Color(0xFF003049)
 
-// Font Color Choices
-val FontWhite = Color(0xFFFFFFFF)
-val FontGold = Color(0xFFFFE082) // Elegant light gold (ذهبي فاتح)
-val FontSilver = Color(0xFFECEFF1) // Vibrant bright silver (فضي متوهج)
+// Status Colors
+val StatusPending = Color(0xFFEAB308)     // Modern Gold
+val StatusInProgress = Color(0xFF3B82F6)  // Modern Blue
+val StatusResolved = Color(0xFF22C55E)    // Modern Green

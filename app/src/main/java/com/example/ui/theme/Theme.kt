@@ -1,52 +1,47 @@
 package com.example.ui.theme
 
+import android.app.Activity
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalView
 
-private val SlateColorScheme = darkColorScheme(
-    primary = SlatePrimary,
-    secondary = SlateSecondary,
-    background = SlateBackground,
-    surface = SlateSurface,
-    onPrimary = Color(0xFF0F172A),
-    onSecondary = Color.White,
-    onBackground = Color.White,
-    onSurface = Color.White
+private val DarkColorScheme = darkColorScheme(
+    primary = DarkPrimary,
+    onPrimary = DarkOnPrimary,
+    primaryContainer = DarkPrimaryContainer,
+    secondary = DarkSecondary,
+    background = DarkBackground,
+    surface = DarkSurface,
+    error = DarkError
 )
 
-private val GoldColorScheme = darkColorScheme(
-    primary = GoldPrimary,
-    secondary = GoldSecondary,
-    background = GoldBackground,
-    surface = GoldSurface,
-    onPrimary = Color.Black,
-    onSecondary = Color.White,
-    onBackground = Color.White,
-    onSurface = Color.White
-)
-
-private val EmeraldColorScheme = darkColorScheme(
-    primary = EmeraldPrimary,
-    secondary = EmeraldSecondary,
-    background = EmeraldBackground,
-    surface = EmeraldSurface,
-    onPrimary = Color(0xFF022C22),
-    onSecondary = Color.White,
-    onBackground = Color.White,
-    onSurface = Color.White
+private val LightColorScheme = lightColorScheme(
+    primary = LightPrimary,
+    onPrimary = LightOnPrimary,
+    primaryContainer = LightPrimaryContainer,
+    secondary = LightSecondary,
+    background = LightBackground,
+    surface = LightSurface,
+    error = LightError
 )
 
 @Composable
 fun PortalTheme(
-    themeName: String = "GOLD",
+    darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when (themeName.uppercase()) {
-        "SLATE" -> SlateColorScheme
-        "EMERALD" -> EmeraldColorScheme
-        else -> GoldColorScheme
+    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as Activity).window
+            window.statusBarColor = colorScheme.surface.toArgb()
+        }
     }
 
     MaterialTheme(
@@ -54,13 +49,4 @@ fun PortalTheme(
         typography = Typography,
         content = content
     )
-}
-
-fun getActiveFontColor(name: String): Color {
-    return when (name.uppercase()) {
-        "WHITE" -> FontWhite
-        "GOLD" -> FontGold
-        "SILVER" -> FontSilver
-        else -> FontGold
-    }
 }
